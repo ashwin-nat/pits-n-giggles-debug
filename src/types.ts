@@ -9,6 +9,25 @@ export interface TelemetrySession {
   sourceLine?: number;
 }
 
+export type StatNodeKind = 'subsystem' | 'container' | 'metric';
+
+export interface StatMetricValue {
+  count: number;
+  bytes?: number;
+  type?: string;
+}
+
+export interface StatTreeNode {
+  id: string;
+  pathKey: string;
+  name: string;
+  segments: string[];
+  path: string;
+  kind: StatNodeKind;
+  metric?: StatMetricValue;
+  children?: StatTreeNode[];
+}
+
 export interface MetricRow {
   subsystem: string;
   groupPath: string;

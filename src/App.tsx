@@ -1,22 +1,23 @@
 import {
   type ChangeEvent,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
+import { Tree } from 'react-arborist';
+import type { NodeApi, NodeRendererProps, TreeApi } from 'react-arborist';
 import { DataTable } from './components/DataTable';
-import type { GroupRow, MetricRow, TelemetrySession } from './types';
+import type { StatTreeNode, TelemetrySession } from './types';
 import { parseTelemetryInput, statsMarker } from './utils/parser';
+import { formatBytes, formatNumber, formatSeconds, formatTimestamp } from './utils/stats';
 import {
-  flattenSessionMetrics,
-  flattenSubsystemMetrics,
-  formatNumber,
-  formatSeconds,
-  formatTimestamp,
-  groupMetrics,
-} from './utils/stats';
+  buildStatsTree,
+  indexStatsTree,
+  pathKeyFromSegments,
+} from './utils/tree';
 
 type View = 'input' | 'sessions' | 'explorer';
 
@@ -24,19 +25,152 @@ interface SessionListRow extends TelemetrySession {
   index: number;
 }
 
-const groupLabel = (value: string): string => value || '(root)';
+const ChevronRightIcon = () => (
+  <svg
+    viewBox="0 0 16 16"
+    width="16"
+    height="16"
+    fill="currentColor"
+    aria-hidden
+  >
+    <path
+      fillRule="evenodd"
+      d="M6.646 12.854a.5.5 0 0 1 0-.708L10.293 8 6.646 4.354a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708 0"
+    />
+  </svg>
+);
 
+const ChevronDownIcon = () => (
+  <svg
+    viewBox="0 0 16 16"
+    width="16"
+    height="16"
+    fill="currentColor"
+    aria-hidden
+  >
+    <path
+      fillRule="evenodd"
+      d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708"
+    />
+  </svg>
+);
+
+const DotIcon = () => (
+  <svg
+    viewBox="0 0 16 16"
+    width="16"
+    height="16"
+    fill="currentColor"
+    aria-hidden
+  >
+    <circle cx="8" cy="8" r="3" />
+  </svg>
+);
+
+const CopyIcon = () => (
+  <svg
+    viewBox="0 0 16 16"
+    width="16"
+    height="16"
+    fill="currentColor"
+    aria-hidden
+  >
+    <path d="M10 1.5v1h-6v10h-1v-10A1.5 1.5 0 0 1 4.5 1h5a.5.5 0 0 1 .5.5" />
+    <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3h5A1.5 1.5 0 0 1 13 4.5v8A1.5 1.5 0 0 1 11.5 14h-5A1.5 1.5 0 0 1 5 12.5zM6.5 4a.5.5 0 0 0-.5.5v8a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-8a.5.5 0 0 0-.5-.5z" />
+  </svg>
+);
+
+const isCategoryNode = (node: StatTreeNode | undefined): boolean => {
+  if (!node || node.kind !== 'container') {
+    return false;
+  }
+
+  const children = node.children ?? [];
+  return children.length > 0 && children.every((child) => child.kind === 'metric');
+};
+
+function StatsTreeNodeRenderer({ node, style }: NodeRendererProps<StatTreeNode>) {
+  const isMetric = node.data.kind === 'metric';
+
+  return (
+    <div
+      style={style}
+      onClick={node.handleClick}
+      className={`flex h-full items-center gap-2 border-l-2 px-2 text-sm ${
+        node.isSelected
+          ? 'border-accent bg-hover text-text'
+          : 'border-transparent text-muted hover:bg-hover hover:text-text'
+      }`}
+    >
+      {node.isInternal ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            node.toggle();
+          }}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-card text-lg font-bold leading-none text-text hover:border-accent hover:text-accent"
+          aria-label={node.isOpen ? 'Collapse' : 'Expand'}
+        >
+          {node.isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
+        </button>
+      ) : (
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-card">
+          <span className="text-muted">
+            <DotIcon />
+          </span>
+        </span>
+      )}
+      <span className="truncate">{node.data.name}</span>
+      {isMetric && (
+        <span className="ml-auto text-xs tabular-nums text-muted">
+          {formatNumber(node.data.metric?.count)}
+        </span>
+      )}
+    </div>
+  );
+}
 function App() {
   const [activeView, setActiveView] = useState<View>('input');
   const [inputText, setInputText] = useState('');
   const [sessions, setSessions] = useState<TelemetrySession[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
-  const [selectedSubsystem, setSelectedSubsystem] = useState<string>('');
-  const [selectedGroupPath, setSelectedGroupPath] = useState<string>('');
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('');
+  const [treeSearch, setTreeSearch] = useState('');
   const [showRawJson, setShowRawJson] = useState(false);
+  const [rawJsonCopied, setRawJsonCopied] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(() =>
+    typeof window === 'undefined' ? 900 : window.innerHeight
+  );
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const treeRef = useRef<TreeApi<StatTreeNode> | null>(null);
+  const rawJsonCopyResetRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', handleResize);
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (rawJsonCopyResetRef.current !== null) {
+        window.clearTimeout(rawJsonCopyResetRef.current);
+      }
+    };
+  }, []);
+
+  const treeHeight = useMemo(
+    () => Math.max(320, Math.min(720, viewportHeight - 360)),
+    [viewportHeight]
+  );
 
   const sessionRows = useMemo<SessionListRow[]>(
     () => sessions.map((session, index) => ({ ...session, index: index + 1 })),
@@ -48,75 +182,91 @@ function App() {
     [sessions, selectedSessionId]
   );
 
-  const allSessionMetrics = useMemo<MetricRow[]>(() => {
+  const selectedSessionNumber = useMemo(() => {
+    const row = sessionRows.find((session) => session.sessionId === selectedSessionId);
+    return row?.index ?? 1;
+  }, [sessionRows, selectedSessionId]);
+
+  const treeData = useMemo<StatTreeNode[]>(() => {
     if (!selectedSession) {
       return [];
     }
-    return flattenSessionMetrics(selectedSession);
+    return buildStatsTree(selectedSession.statsJson);
   }, [selectedSession]);
 
-  const subsystemMetrics = useMemo<MetricRow[]>(() => {
-    if (!selectedSession || !selectedSubsystem) {
-      return [];
+  const treeIndex = useMemo(() => indexStatsTree(treeData), [treeData]);
+
+  const resolvedSelectedNodeId = useMemo(() => {
+    if (selectedNodeId && treeIndex.byId.has(selectedNodeId)) {
+      return selectedNodeId;
     }
-    return flattenSubsystemMetrics(
-      selectedSubsystem,
-      selectedSession.statsJson[selectedSubsystem]
+    return treeData[0]?.id ?? '';
+  }, [selectedNodeId, treeData, treeIndex]);
+
+  const selectedNode = useMemo(
+    () =>
+      resolvedSelectedNodeId
+        ? treeIndex.byId.get(resolvedSelectedNodeId)
+        : undefined,
+    [resolvedSelectedNodeId, treeIndex]
+  );
+
+  const selectedParentNode = useMemo(() => {
+    if (!selectedNode || selectedNode.segments.length < 2) {
+      return undefined;
+    }
+
+    return treeIndex.byPath.get(
+      pathKeyFromSegments(selectedNode.segments.slice(0, -1))
     );
-  }, [selectedSession, selectedSubsystem]);
+  }, [selectedNode, treeIndex]);
 
-  const groups = useMemo<GroupRow[]>(() => {
-    if (!selectedSubsystem) {
-      return [];
-    }
-    return groupMetrics(selectedSubsystem, subsystemMetrics);
-  }, [selectedSubsystem, subsystemMetrics]);
-
-  const resolvedGroupPath = useMemo(() => {
-    if (groups.length === 0) {
+  const selectedNodeKindLabel = useMemo(() => {
+    if (!selectedNode) {
       return '';
     }
 
-    if (!selectedGroupPath) {
-      return groups[0].groupPath;
+    if (selectedNode.kind === 'subsystem') {
+      return 'Subsystem';
     }
 
-    const hasValidSelection = groups.some(
-      (group) =>
-        group.groupPath === selectedGroupPath ||
-        group.groupPath.startsWith(`${selectedGroupPath}.`)
-    );
-
-    return hasValidSelection ? selectedGroupPath : groups[0].groupPath;
-  }, [groups, selectedGroupPath]);
-
-  const visibleGroups = useMemo(() => {
-    if (!resolvedGroupPath) {
-      return groups;
+    if (selectedNode.kind === 'metric') {
+      return 'Subcategory';
     }
-    return groups.filter(
-      (group) =>
-        group.groupPath === resolvedGroupPath ||
-        group.groupPath.startsWith(`${resolvedGroupPath}.`)
-    );
-  }, [groups, resolvedGroupPath]);
 
-  const selectedGroup = useMemo(() => {
-    if (visibleGroups.length === 0) {
+    return isCategoryNode(selectedNode) ? 'Category' : 'Container';
+  }, [selectedNode]);
+
+  const selectedNodeCategoryName = useMemo(() => {
+    if (!selectedNode || selectedNode.kind !== 'metric') {
       return undefined;
     }
-    const exact = visibleGroups.find(
-      (group) => group.groupPath === resolvedGroupPath
-    );
-    return exact ?? visibleGroups[0];
-  }, [resolvedGroupPath, visibleGroups]);
 
-  const totalGroupCount = useMemo(() => {
-    const keys = new Set(
-      allSessionMetrics.map((metric) => `${metric.subsystem}:${metric.groupPath}`)
-    );
-    return keys.size;
-  }, [allSessionMetrics]);
+    if (!selectedParentNode || !isCategoryNode(selectedParentNode)) {
+      return undefined;
+    }
+
+    return selectedParentNode.name;
+  }, [selectedNode, selectedParentNode]);
+
+  const breadcrumbNodes = useMemo(() => {
+    if (!selectedNode) {
+      return [];
+    }
+
+    const nodes: StatTreeNode[] = [];
+
+    for (let i = 0; i < selectedNode.segments.length; i += 1) {
+      const node = treeIndex.byPath.get(
+        pathKeyFromSegments(selectedNode.segments.slice(0, i + 1))
+      );
+      if (node) {
+        nodes.push(node);
+      }
+    }
+
+    return nodes;
+  }, [selectedNode, treeIndex]);
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -140,14 +290,14 @@ function App() {
 
   const openSession = useCallback(
     (sessionId: string) => {
-      const session = sessions.find((item) => item.sessionId === sessionId);
       setSelectedSessionId(sessionId);
-      setSelectedSubsystem(session?.subsystems[0] ?? '');
-      setSelectedGroupPath('');
+      setSelectedNodeId('');
+      setTreeSearch('');
       setShowRawJson(false);
+      setRawJsonCopied(false);
       setActiveView('explorer');
     },
-    [sessions]
+    []
   );
 
   const handleParseSessions = useCallback(() => {
@@ -157,31 +307,68 @@ function App() {
 
     if (result.sessions.length > 0) {
       setSelectedSessionId(result.sessions[0].sessionId);
-      setSelectedSubsystem(result.sessions[0].subsystems[0] ?? '');
-      setSelectedGroupPath('');
+      setSelectedNodeId('');
+      setTreeSearch('');
       setShowRawJson(false);
+      setRawJsonCopied(false);
       setActiveView('sessions');
     }
   }, [inputText]);
+
+  const handleCopyRawJson = useCallback(async () => {
+    if (!selectedSession) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(
+      JSON.stringify(selectedSession.statsJson, null, 2)
+    );
+    setRawJsonCopied(true);
+
+    if (rawJsonCopyResetRef.current !== null) {
+      window.clearTimeout(rawJsonCopyResetRef.current);
+    }
+    rawJsonCopyResetRef.current = window.setTimeout(() => {
+      setRawJsonCopied(false);
+      rawJsonCopyResetRef.current = null;
+    }, 1600);
+  }, [selectedSession]);
+
+  const handleTreeSelect = useCallback((nodes: NodeApi<StatTreeNode>[]) => {
+    setSelectedNodeId(nodes[0]?.id ?? '');
+  }, []);
+
+  const searchMatch = useCallback((node: NodeApi<StatTreeNode>, term: string) => {
+    const searchTerm = term.trim().toLowerCase();
+    if (!searchTerm) {
+      return true;
+    }
+
+    return (
+      node.data.name.toLowerCase().includes(searchTerm) ||
+      node.data.path.toLowerCase().includes(searchTerm)
+    );
+  }, []);
 
   const sessionColumns = useMemo<ColumnDef<SessionListRow>[]>(
     () => [
       {
         accessorKey: 'index',
-        header: '#',
-        size: 50,
+        header: 'Session',
+        cell: ({ row }) => `Session ${row.original.index}`,
+        size: 120,
       },
       {
         accessorKey: 'timestamp',
         header: 'Timestamp',
         cell: ({ row }) => formatTimestamp(row.original.timestamp),
-        size: 250,
+        size: 260,
       },
       {
         accessorKey: 'subsystems',
         header: 'Subsystems',
         cell: ({ row }) => row.original.subsystems.join(', '),
-        size: 320,
+        size: 360,
       },
       {
         accessorKey: 'uptimeSeconds',
@@ -191,7 +378,7 @@ function App() {
       },
       {
         id: 'view',
-        header: '',
+        header: 'View',
         size: 100,
         cell: ({ row }) => (
           <button
@@ -207,130 +394,9 @@ function App() {
     [openSession]
   );
 
-  const groupColumns = useMemo<ColumnDef<GroupRow>[]>(
-    () => [
-      {
-        accessorKey: 'groupPath',
-        header: 'Group',
-        cell: ({ row }) => groupLabel(row.original.groupPath),
-        size: 380,
-      },
-      {
-        accessorKey: 'metricCount',
-        header: 'Metrics',
-        cell: ({ row }) => (
-          <span className="block text-right tabular-nums">
-            {formatNumber(row.original.metricCount)}
-          </span>
-        ),
-        size: 100,
-      },
-      {
-        accessorKey: 'totalCount',
-        header: 'Total Count',
-        cell: ({ row }) => (
-          <span className="block text-right tabular-nums">
-            {formatNumber(row.original.totalCount)}
-          </span>
-        ),
-        size: 140,
-      },
-      {
-        accessorKey: 'totalBytes',
-        header: 'Total Bytes',
-        cell: ({ row }) => (
-          <span className="block text-right tabular-nums">
-            {formatNumber(row.original.totalBytes)}
-          </span>
-        ),
-        size: 140,
-      },
-      {
-        id: 'inspect',
-        header: '',
-        size: 100,
-        cell: ({ row }) => (
-          <button
-            type="button"
-            onClick={() => setSelectedGroupPath(row.original.groupPath)}
-            className="rounded border border-border px-2 py-1 text-xs hover:border-accent hover:text-accent"
-          >
-            Inspect
-          </button>
-        ),
-      },
-    ],
-    []
-  );
-
-  const metricColumns = useMemo<ColumnDef<MetricRow>[]>(
-    () => [
-      {
-        accessorKey: 'metricName',
-        header: 'Metric',
-        size: 220,
-      },
-      {
-        accessorKey: 'count',
-        header: 'Count',
-        cell: ({ row }) => (
-          <span className="block text-right tabular-nums">
-            {formatNumber(row.original.count)}
-          </span>
-        ),
-        size: 110,
-      },
-      {
-        accessorKey: 'bytes',
-        header: 'Bytes',
-        cell: ({ row }) => (
-          <span className="block text-right tabular-nums">
-            {formatNumber(row.original.bytes)}
-          </span>
-        ),
-        size: 120,
-      },
-      {
-        id: 'avgBytes',
-        header: 'Avg Bytes',
-        size: 120,
-        cell: ({ row }) => {
-          const { bytes, count } = row.original;
-          if (bytes === undefined || count === undefined || count === 0) {
-            return <span className="block text-right tabular-nums">-</span>;
-          }
-          return (
-            <span className="block text-right tabular-nums">
-              {formatNumber(Math.round(bytes / count))}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: 'type',
-        header: 'Type',
-        cell: ({ row }) => row.original.type ?? '-',
-        size: 100,
-      },
-      {
-        accessorKey: 'fullPath',
-        header: 'Full Path',
-        size: 420,
-      },
-    ],
-    []
-  );
-
-  const breadcrumbs = useMemo(() => {
-    if (!resolvedGroupPath) {
-      return [];
-    }
-    return resolvedGroupPath.split('.').filter(Boolean);
-  }, [resolvedGroupPath]);
-
   return (
     <div className="min-h-screen bg-bg text-text">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-6 md:px-6">
+      <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 md:px-6">
         <header className="mb-6 rounded-md border border-border bg-card px-4 py-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -451,60 +517,22 @@ function App() {
                   <span>&gt;</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedGroupPath('');
-                      setActiveView('explorer');
-                    }}
+                    onClick={() => setSelectedNodeId(treeData[0]?.id ?? '')}
                     className="rounded border border-border px-2 py-1 hover:border-accent hover:text-accent"
                   >
-                    Session {sessionRows.findIndex((row) => row.sessionId === selectedSession.sessionId) + 1}
+                    Session {selectedSessionNumber}
                   </button>
-                  {selectedSubsystem && (
-                    <>
+                  {breadcrumbNodes.map((crumb) => (
+                    <span key={crumb.id} className="inline-flex items-center gap-2">
                       <span>&gt;</span>
                       <button
                         type="button"
-                        onClick={() => setSelectedGroupPath('')}
+                        onClick={() => setSelectedNodeId(crumb.id)}
                         className="rounded border border-border px-2 py-1 hover:border-accent hover:text-accent"
                       >
-                        {selectedSubsystem}
+                        {crumb.name}
                       </button>
-                    </>
-                  )}
-                  {breadcrumbs.map((crumb, index) => {
-                    const path = breadcrumbs.slice(0, index + 1).join('.');
-                    return (
-                      <span key={path} className="inline-flex items-center gap-2">
-                        <span>&gt;</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedGroupPath(path)}
-                          className="rounded border border-border px-2 py-1 hover:border-accent hover:text-accent"
-                        >
-                          {crumb}
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-
-                <div className="mb-4 flex flex-wrap gap-2">
-                  {selectedSession.subsystems.map((subsystem) => (
-                    <button
-                      key={subsystem}
-                      type="button"
-                      onClick={() => {
-                        setSelectedSubsystem(subsystem);
-                        setSelectedGroupPath('');
-                      }}
-                      className={`rounded border px-3 py-1.5 text-sm ${
-                        selectedSubsystem === subsystem
-                          ? 'border-accent bg-accent text-black'
-                          : 'border-border hover:border-accent hover:text-accent'
-                      }`}
-                    >
-                      {subsystem}
-                    </button>
+                    </span>
                   ))}
                 </div>
 
@@ -520,13 +548,15 @@ function App() {
                     </div>
                   </div>
                   <div className="rounded border border-border bg-bg p-3">
-                    <div className="text-xs text-muted">Groups</div>
-                    <div className="mt-1 text-sm tabular-nums">{formatNumber(totalGroupCount)}</div>
+                    <div className="text-xs text-muted">Tree nodes</div>
+                    <div className="mt-1 text-sm tabular-nums">
+                      {formatNumber(treeIndex.totalNodes)}
+                    </div>
                   </div>
                   <div className="rounded border border-border bg-bg p-3">
-                    <div className="text-xs text-muted">Total metrics</div>
+                    <div className="text-xs text-muted">Metric leaves</div>
                     <div className="mt-1 text-sm tabular-nums">
-                      {formatNumber(allSessionMetrics.length)}
+                      {formatNumber(treeIndex.metricNodes)}
                     </div>
                   </div>
                 </div>
@@ -536,47 +566,190 @@ function App() {
                 </div>
               </div>
 
-              <div className="rounded-md border border-border bg-card p-4">
-                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-                  Group Navigator ({selectedSubsystem || 'No subsystem selected'})
-                </h3>
-                <DataTable
-                  data={groups}
-                  columns={groupColumns}
-                  emptyMessage="No metric groups detected for this subsystem."
-                  filterPlaceholder="Filter group path..."
-                  pageSize={6}
-                />
-              </div>
-
-              <div className="rounded-md border border-border bg-card p-4">
-                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-                  Metrics: {selectedGroup ? groupLabel(selectedGroup.groupPath) : 'No group selected'}
-                </h3>
-                <DataTable
-                  data={selectedGroup?.metrics ?? []}
-                  columns={metricColumns}
-                  emptyMessage="No metrics in this group."
-                  filterPlaceholder="Filter metrics by name, type, or full path..."
-                  pageSize={12}
-                />
-                {selectedGroup && (
-                  <div className="mt-3 rounded border border-border bg-bg px-3 py-2 text-xs text-muted">
-                    Showing {formatNumber(selectedGroup.metricCount)} metrics | Total Count{' '}
-                    {formatNumber(selectedGroup.totalCount)} | Total Bytes{' '}
-                    {formatNumber(selectedGroup.totalBytes)}
+              <div className="grid gap-4 xl:grid-cols-[minmax(340px,420px)_1fr]">
+                <div className="rounded-md border border-border bg-card p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <input
+                      value={treeSearch}
+                      onChange={(event) => setTreeSearch(event.target.value)}
+                      placeholder="Search node name or full path..."
+                      className="w-full rounded border border-border bg-bg px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                    />
                   </div>
-                )}
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => treeRef.current?.openAll()}
+                      className="rounded border border-border px-2 py-1 hover:border-accent hover:text-accent"
+                    >
+                      Expand All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => treeRef.current?.closeAll()}
+                      className="rounded border border-border px-2 py-1 hover:border-accent hover:text-accent"
+                    >
+                      Collapse All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTreeSearch('')}
+                      className="rounded border border-border px-2 py-1 hover:border-accent hover:text-accent"
+                    >
+                      Clear Search
+                    </button>
+                  </div>
+
+                  <div className="overflow-hidden rounded border border-border bg-bg">
+                    {treeData.length > 0 ? (
+                      <Tree
+                        ref={treeRef}
+                        data={treeData}
+                        width="100%"
+                        height={treeHeight}
+                        rowHeight={38}
+                        indent={20}
+                        overscanCount={8}
+                        disableDrag
+                        disableEdit
+                        disableMultiSelection
+                        selection={resolvedSelectedNodeId}
+                        searchTerm={treeSearch}
+                        searchMatch={searchMatch}
+                        onSelect={handleTreeSelect}
+                      >
+                        {StatsTreeNodeRenderer}
+                      </Tree>
+                    ) : (
+                      <div className="px-3 py-6 text-sm text-muted">
+                        No tree nodes found for this session.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border bg-card p-4">
+                  {selectedNode ? (
+                    <div className="space-y-4">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-muted">
+                          Selected Node
+                        </div>
+                        <h3 className="mt-1 text-xl font-semibold">{selectedNode.name}</h3>
+                      </div>
+
+                      {selectedNode.kind === 'metric' ? (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Count</div>
+                            <div className="mt-1 text-base tabular-nums">
+                              {formatNumber(selectedNode.metric?.count)}
+                            </div>
+                          </div>
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Bytes</div>
+                            <div className="mt-1 text-base tabular-nums">
+                              {selectedNode.metric?.bytes !== undefined
+                                ? `${formatNumber(selectedNode.metric.bytes)} (${formatBytes(selectedNode.metric.bytes)})`
+                                : '-'}
+                            </div>
+                          </div>
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Type</div>
+                            <div className="mt-1 text-base">
+                              {selectedNode.metric?.type ?? '-'}
+                            </div>
+                          </div>
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Category</div>
+                            <div className="mt-1 text-base">
+                              {selectedNodeCategoryName ?? '-'}
+                            </div>
+                          </div>
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Node Kind</div>
+                            <div className="mt-1 text-base">Subcategory</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Node Kind</div>
+                            <div className="mt-1 text-base">
+                              {selectedNodeKindLabel}
+                            </div>
+                          </div>
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Children</div>
+                            <div className="mt-1 text-base tabular-nums">
+                              {formatNumber(selectedNode.children?.length ?? 0)}
+                            </div>
+                          </div>
+                          <div className="rounded border border-border bg-bg p-3">
+                            <div className="text-xs text-muted">Child Nodes</div>
+                            <div className="mt-2 space-y-1 text-sm">
+                              {(selectedNode.children ?? []).length > 0 ? (
+                                selectedNode.children?.map((child) => (
+                                  <button
+                                    key={child.id}
+                                    type="button"
+                                    onClick={() => setSelectedNodeId(child.id)}
+                                    className="block text-left text-muted hover:text-accent"
+                                  >
+                                    {child.name}
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="text-muted">No child nodes</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="rounded border border-border bg-bg p-3">
+                        <div className="text-xs text-muted">Full Path</div>
+                        <div className="mt-1 break-all text-sm">{selectedNode.path}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted">Select a node to inspect its details.</div>
+                  )}
+                </div>
               </div>
 
               <div className="rounded-md border border-border bg-card p-4">
-                <button
-                  type="button"
-                  onClick={() => setShowRawJson((value) => !value)}
-                  className="rounded border border-border px-3 py-2 text-sm hover:border-accent hover:text-accent"
-                >
-                  {showRawJson ? 'Hide Raw JSON' : 'Show Raw JSON'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !showRawJson;
+                      setShowRawJson(next);
+                      if (!next) {
+                        setRawJsonCopied(false);
+                      }
+                    }}
+                    className="rounded border border-border px-3 py-2 text-sm hover:border-accent hover:text-accent"
+                  >
+                    {showRawJson ? 'Hide Raw JSON' : 'Show Raw JSON'}
+                  </button>
+                  {showRawJson && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleCopyRawJson();
+                      }}
+                      className="inline-flex h-[38px] w-[38px] items-center justify-center rounded border border-border text-base text-muted hover:border-accent hover:text-accent"
+                      title="Copy Raw JSON"
+                      aria-label="Copy Raw JSON"
+                    >
+                      <CopyIcon />
+                    </button>
+                  )}
+                  {showRawJson && rawJsonCopied && (
+                    <span className="text-xs text-muted">Copied</span>
+                  )}
+                </div>
                 {showRawJson && (
                   <pre className="mt-3 max-h-[420px] overflow-auto rounded border border-border bg-bg p-3 text-xs text-muted">
                     {JSON.stringify(selectedSession.statsJson, null, 2)}
@@ -597,3 +770,4 @@ function App() {
 }
 
 export default App;
+
