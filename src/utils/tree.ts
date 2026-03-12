@@ -31,6 +31,19 @@ const createNodeId = (segments: string[]): string =>
 export const pathKeyFromSegments = (segments: string[]): string =>
   segments.join(PATH_SEPARATOR);
 
+const readNumberField = (
+  value: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined => {
+  for (const key of keys) {
+    const parsed = toNumber(value[key]);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return undefined;
+};
+
 const buildNode = (
   key: string,
   value: unknown,
@@ -49,6 +62,20 @@ const buildNode = (
         count: toNumber(value.count) ?? 0,
         bytes: toNumber(value.bytes),
         type: typeof value.type === 'string' ? value.type : undefined,
+        badLatencyCount: readNumberField(
+          value,
+          'bad_latency_count',
+          'badLatencyCount'
+        ),
+        minNs: readNumberField(value, 'min_ns', 'minNs', 'min'),
+        maxNs: readNumberField(value, 'max_ns', 'maxNs', 'max'),
+        avgNs: readNumberField(value, 'avg_ns', 'avgNs', 'avg'),
+        stddevNs: readNumberField(
+          value,
+          'stddev_ns',
+          'stddevNs',
+          'stddev'
+        ),
       },
     };
   }

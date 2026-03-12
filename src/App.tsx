@@ -12,7 +12,13 @@ import type { NodeApi, NodeRendererProps, TreeApi } from 'react-arborist';
 import { DataTable } from './components/DataTable';
 import type { StatTreeNode, TelemetrySession } from './types';
 import { parseTelemetryInput, statsMarker } from './utils/parser';
-import { formatBytes, formatNumber, formatSeconds, formatTimestamp } from './utils/stats';
+import {
+  formatBytes,
+  formatMillisecondsFromNanoseconds,
+  formatNumber,
+  formatSeconds,
+  formatTimestamp,
+} from './utils/stats';
 import {
   buildStatsTree,
   indexStatsTree,
@@ -248,6 +254,23 @@ function App() {
 
     return selectedParentNode.name;
   }, [selectedNode, selectedParentNode]);
+
+  const selectedMetricHasLatency = useMemo(() => {
+    if (!selectedNode || selectedNode.kind !== 'metric') {
+      return false;
+    }
+
+    const metric = selectedNode.metric;
+    return Boolean(
+      metric &&
+        (metric.type === '__LATENCY__' ||
+          metric.badLatencyCount !== undefined ||
+          metric.minNs !== undefined ||
+          metric.maxNs !== undefined ||
+          metric.avgNs !== undefined ||
+          metric.stddevNs !== undefined)
+    );
+  }, [selectedNode]);
 
   const breadcrumbNodes = useMemo(() => {
     if (!selectedNode) {
@@ -660,6 +683,48 @@ function App() {
                               {selectedNode.metric?.type ?? '-'}
                             </div>
                           </div>
+                          {selectedMetricHasLatency && (
+                            <>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Bad Latency Count</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatNumber(selectedNode.metric?.badLatencyCount)}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Min (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.minNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Max (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.maxNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Avg (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.avgNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Std Dev (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.stddevNs
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
                           <div className="rounded border border-border bg-bg p-3">
                             <div className="text-xs text-muted">Category</div>
                             <div className="mt-1 text-base">

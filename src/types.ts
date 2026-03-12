@@ -15,6 +15,11 @@ export interface StatMetricValue {
   count: number;
   bytes?: number;
   type?: string;
+  badLatencyCount?: number;
+  minNs?: number;
+  maxNs?: number;
+  avgNs?: number;
+  stddevNs?: number;
 }
 
 export interface StatTreeNode {
@@ -35,6 +40,11 @@ export interface MetricRow {
   count?: number;
   bytes?: number;
   type?: string;
+  badLatencyCount?: number;
+  minNs?: number;
+  maxNs?: number;
+  avgNs?: number;
+  stddevNs?: number;
   fullPath: string;
 }
 

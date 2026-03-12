@@ -25,6 +25,19 @@ const isMetricContainer = (value: unknown): value is Record<string, unknown> => 
   return count !== undefined || bytes !== undefined;
 };
 
+const readNumberField = (
+  value: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined => {
+  for (const key of keys) {
+    const parsed = toNumber(value[key]);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return undefined;
+};
+
 export const flattenSubsystemMetrics = (
   subsystem: string,
   subsystemData: unknown
@@ -49,6 +62,16 @@ export const flattenSubsystemMetrics = (
         count: toNumber(node.count),
         bytes: toNumber(node.bytes),
         type: typeof node.type === 'string' ? node.type : undefined,
+        badLatencyCount: readNumberField(node, 'bad_latency_count', 'badLatencyCount'),
+        minNs: readNumberField(node, 'min_ns', 'minNs', 'min'),
+        maxNs: readNumberField(node, 'max_ns', 'maxNs', 'max'),
+        avgNs: readNumberField(node, 'avg_ns', 'avgNs', 'avg'),
+        stddevNs: readNumberField(
+          node,
+          'stddev_ns',
+          'stddevNs',
+          'stddev'
+        ),
         fullPath: [subsystem, ...path].join('.'),
       });
       return;
@@ -143,6 +166,15 @@ export const formatSeconds = (value?: number): string => {
     return '-';
   }
   return `${value.toFixed(1)}s`;
+};
+
+export const formatMillisecondsFromNanoseconds = (valueNs?: number): string => {
+  if (valueNs === undefined) {
+    return '-';
+  }
+
+  const valueMs = valueNs / 1_000_000;
+  return `${valueMs.toLocaleString(undefined, { maximumFractionDigits: 3 })} ms`;
 };
 
 export const formatTimestamp = (value: string): string => {
