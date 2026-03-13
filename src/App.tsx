@@ -14,8 +14,10 @@ import type { StatTreeNode, TelemetrySession } from './types';
 import { parseTelemetryInput, statsMarker } from './utils/parser';
 import {
   formatBytes,
+  formatDecimal,
   formatMillisecondsFromNanoseconds,
   formatNumber,
+  formatPercentFromRatio,
   formatSeconds,
   formatTimestamp,
 } from './utils/stats';
@@ -269,6 +271,19 @@ function App() {
           metric.maxNs !== undefined ||
           metric.avgNs !== undefined ||
           metric.stddevNs !== undefined)
+    );
+  }, [selectedNode]);
+
+  const selectedMetricHasFrameRender = useMemo(() => {
+    if (!selectedNode || selectedNode.kind !== 'metric') {
+      return false;
+    }
+
+    const frameRender = selectedNode.metric?.frameRender;
+    return Boolean(
+      selectedNode.metric?.type === '__FRAME_TIMING__' &&
+        frameRender &&
+        Object.values(frameRender).some((entry) => entry !== undefined)
     );
   }, [selectedNode]);
 
@@ -720,6 +735,114 @@ function App() {
                                 <div className="mt-1 text-base tabular-nums">
                                   {formatMillisecondsFromNanoseconds(
                                     selectedNode.metric?.stddevNs
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          {selectedMetricHasFrameRender && (
+                            <>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Budget Max Miss Streak</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatNumber(
+                                    selectedNode.metric?.frameRender?.budgetMaxMissStreak
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Budget Miss Ratio</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatPercentFromRatio(
+                                    selectedNode.metric?.frameRender?.budgetMissRatio
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Budget Missed Frames</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatNumber(
+                                    selectedNode.metric?.frameRender?.budgetMissedFrames
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">FPS Avg</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsAvg)}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">FPS Min</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsMin)}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">FPS Max</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsMax)}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">FPS Target</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsTarget)}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Interval Avg (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.frameRender?.intervalAvgNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Interval Min (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.frameRender?.intervalMinNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Interval Max (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.frameRender?.intervalMaxNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Interval Std Dev (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.frameRender?.intervalStddevNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Interval Variance</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatDecimal(
+                                    selectedNode.metric?.frameRender?.intervalVariance
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Pacing Error Avg (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.frameRender?.pacingErrorAvgNs
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border bg-bg p-3">
+                                <div className="text-xs text-muted">Pacing Error Max (ms)</div>
+                                <div className="mt-1 text-base tabular-nums">
+                                  {formatMillisecondsFromNanoseconds(
+                                    selectedNode.metric?.frameRender?.pacingErrorMaxNs
                                   )}
                                 </div>
                               </div>

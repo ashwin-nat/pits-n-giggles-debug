@@ -1,4 +1,9 @@
-import type { GroupRow, MetricRow, TelemetrySession } from '../types';
+import type {
+  FrameRenderMetricValue,
+  GroupRow,
+  MetricRow,
+  TelemetrySession,
+} from '../types';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -38,6 +43,48 @@ const readNumberField = (
   return undefined;
 };
 
+const readFrameRenderMetric = (
+  value: Record<string, unknown>
+): FrameRenderMetricValue | undefined => {
+  const budget = isRecord(value.budget) ? value.budget : undefined;
+  const fps = isRecord(value.fps) ? value.fps : undefined;
+  const intervalNs = isRecord(value.interval_ns)
+    ? value.interval_ns
+    : isRecord(value.intervalNs)
+      ? value.intervalNs
+      : undefined;
+  const pacingErrorNs = isRecord(value.pacing_error_ns)
+    ? value.pacing_error_ns
+    : isRecord(value.pacingErrorNs)
+      ? value.pacingErrorNs
+      : undefined;
+
+  const frameRender: FrameRenderMetricValue = {
+    budgetMaxMissStreak: budget
+      ? readNumberField(budget, 'max_miss_streak', 'maxMissStreak')
+      : undefined,
+    budgetMissRatio: budget ? readNumberField(budget, 'miss_ratio', 'missRatio') : undefined,
+    budgetMissedFrames: budget
+      ? readNumberField(budget, 'missed_frames', 'missedFrames')
+      : undefined,
+    fpsAvg: fps ? readNumberField(fps, 'avg') : undefined,
+    fpsMax: fps ? readNumberField(fps, 'max') : undefined,
+    fpsMin: fps ? readNumberField(fps, 'min') : undefined,
+    fpsTarget: fps ? readNumberField(fps, 'target') : undefined,
+    intervalAvgNs: intervalNs ? readNumberField(intervalNs, 'avg') : undefined,
+    intervalMaxNs: intervalNs ? readNumberField(intervalNs, 'max') : undefined,
+    intervalMinNs: intervalNs ? readNumberField(intervalNs, 'min') : undefined,
+    intervalStddevNs: intervalNs ? readNumberField(intervalNs, 'stddev') : undefined,
+    intervalVariance: intervalNs ? readNumberField(intervalNs, 'variance') : undefined,
+    pacingErrorAvgNs: pacingErrorNs ? readNumberField(pacingErrorNs, 'avg') : undefined,
+    pacingErrorMaxNs: pacingErrorNs ? readNumberField(pacingErrorNs, 'max') : undefined,
+  };
+
+  return Object.values(frameRender).some((entry) => entry !== undefined)
+    ? frameRender
+    : undefined;
+};
+
 export const flattenSubsystemMetrics = (
   subsystem: string,
   subsystemData: unknown
@@ -72,6 +119,7 @@ export const flattenSubsystemMetrics = (
           'stddevNs',
           'stddev'
         ),
+        frameRender: readFrameRenderMetric(node),
         fullPath: [subsystem, ...path].join('.'),
       });
       return;
@@ -175,6 +223,26 @@ export const formatMillisecondsFromNanoseconds = (valueNs?: number): string => {
 
   const valueMs = valueNs / 1_000_000;
   return `${valueMs.toLocaleString(undefined, { maximumFractionDigits: 3 })} ms`;
+};
+
+export const formatDecimal = (
+  value: number | undefined,
+  maximumFractionDigits = 3
+): string => {
+  if (value === undefined) {
+    return '-';
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits });
+};
+
+export const formatPercentFromRatio = (
+  value: number | undefined,
+  maximumFractionDigits = 2
+): string => {
+  if (value === undefined) {
+    return '-';
+  }
+  return `${(value * 100).toLocaleString(undefined, { maximumFractionDigits })}%`;
 };
 
 export const formatTimestamp = (value: string): string => {

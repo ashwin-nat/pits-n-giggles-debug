@@ -11,6 +11,23 @@ export interface TelemetrySession {
 
 export type StatNodeKind = 'subsystem' | 'container' | 'metric';
 
+export interface FrameRenderMetricValue {
+  budgetMaxMissStreak?: number;
+  budgetMissRatio?: number;
+  budgetMissedFrames?: number;
+  fpsAvg?: number;
+  fpsMax?: number;
+  fpsMin?: number;
+  fpsTarget?: number;
+  intervalAvgNs?: number;
+  intervalMaxNs?: number;
+  intervalMinNs?: number;
+  intervalStddevNs?: number;
+  intervalVariance?: number;
+  pacingErrorAvgNs?: number;
+  pacingErrorMaxNs?: number;
+}
+
 export interface StatMetricValue {
   count: number;
   bytes?: number;
@@ -20,6 +37,7 @@ export interface StatMetricValue {
   maxNs?: number;
   avgNs?: number;
   stddevNs?: number;
+  frameRender?: FrameRenderMetricValue;
 }
 
 export interface StatTreeNode {
@@ -45,6 +63,7 @@ export interface MetricRow {
   maxNs?: number;
   avgNs?: number;
   stddevNs?: number;
+  frameRender?: FrameRenderMetricValue;
   fullPath: string;
 }
 
