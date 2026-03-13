@@ -10,7 +10,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { Tree } from 'react-arborist';
 import type { NodeApi, NodeRendererProps, TreeApi } from 'react-arborist';
 import { DataTable } from './components/DataTable';
-import type { StatTreeNode, TelemetrySession } from './types';
+import type { StatMetricValue, StatTreeNode, TelemetrySession } from './types';
 import { parseTelemetryInput, statsMarker } from './utils/parser';
 import {
   formatBytes,
@@ -95,6 +95,164 @@ const isCategoryNode = (node: StatTreeNode | undefined): boolean => {
 
   const children = node.children ?? [];
   return children.length > 0 && children.every((child) => child.kind === 'metric');
+};
+
+interface MetricDetailCard {
+  key: string;
+  label: string;
+  value: string;
+  tabular?: boolean;
+}
+
+type MetricDetailRenderer = (metric: StatMetricValue) => MetricDetailCard[];
+
+const hasLatencyMetricData = (metric: StatMetricValue | undefined): boolean =>
+  Boolean(
+    metric &&
+      (metric.type === '__LATENCY__' ||
+        metric.badLatencyCount !== undefined ||
+        metric.minNs !== undefined ||
+        metric.maxNs !== undefined ||
+        metric.avgNs !== undefined ||
+        metric.stddevNs !== undefined)
+  );
+
+const hasFrameTimingMetricData = (metric: StatMetricValue | undefined): boolean => {
+  const frameRender = metric?.frameRender;
+  return Boolean(frameRender && Object.values(frameRender).some((entry) => entry !== undefined));
+};
+
+const renderLatencyMetricCards: MetricDetailRenderer = (metric) => [
+  {
+    key: 'latency.bad-latency-count',
+    label: 'Bad Latency Count',
+    value: formatNumber(metric.badLatencyCount),
+    tabular: true,
+  },
+  {
+    key: 'latency.min-ms',
+    label: 'Min (ms)',
+    value: formatMillisecondsFromNanoseconds(metric.minNs),
+    tabular: true,
+  },
+  {
+    key: 'latency.max-ms',
+    label: 'Max (ms)',
+    value: formatMillisecondsFromNanoseconds(metric.maxNs),
+    tabular: true,
+  },
+  {
+    key: 'latency.avg-ms',
+    label: 'Avg (ms)',
+    value: formatMillisecondsFromNanoseconds(metric.avgNs),
+    tabular: true,
+  },
+  {
+    key: 'latency.std-dev-ms',
+    label: 'Std Dev (ms)',
+    value: formatMillisecondsFromNanoseconds(metric.stddevNs),
+    tabular: true,
+  },
+];
+
+const renderFrameTimingMetricCards: MetricDetailRenderer = (metric) => {
+  if (!hasFrameTimingMetricData(metric)) {
+    return [];
+  }
+
+  const frameRender = metric.frameRender;
+
+  return [
+    {
+      key: 'frame-timing.budget-max-miss-streak',
+      label: 'Budget Max Miss Streak',
+      value: formatNumber(frameRender?.budgetMaxMissStreak),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.budget-miss-ratio',
+      label: 'Budget Miss Ratio',
+      value: formatPercentFromRatio(frameRender?.budgetMissRatio),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.budget-missed-frames',
+      label: 'Budget Missed Frames',
+      value: formatNumber(frameRender?.budgetMissedFrames),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.fps-avg',
+      label: 'FPS Avg',
+      value: formatDecimal(frameRender?.fpsAvg),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.fps-min',
+      label: 'FPS Min',
+      value: formatDecimal(frameRender?.fpsMin),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.fps-max',
+      label: 'FPS Max',
+      value: formatDecimal(frameRender?.fpsMax),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.fps-target',
+      label: 'FPS Target',
+      value: formatDecimal(frameRender?.fpsTarget),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.interval-avg-ms',
+      label: 'Interval Avg (ms)',
+      value: formatMillisecondsFromNanoseconds(frameRender?.intervalAvgNs),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.interval-min-ms',
+      label: 'Interval Min (ms)',
+      value: formatMillisecondsFromNanoseconds(frameRender?.intervalMinNs),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.interval-max-ms',
+      label: 'Interval Max (ms)',
+      value: formatMillisecondsFromNanoseconds(frameRender?.intervalMaxNs),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.interval-stddev-ms',
+      label: 'Interval Std Dev (ms)',
+      value: formatMillisecondsFromNanoseconds(frameRender?.intervalStddevNs),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.interval-variance',
+      label: 'Interval Variance',
+      value: formatDecimal(frameRender?.intervalVariance),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.pacing-error-avg-ms',
+      label: 'Pacing Error Avg (ms)',
+      value: formatMillisecondsFromNanoseconds(frameRender?.pacingErrorAvgNs),
+      tabular: true,
+    },
+    {
+      key: 'frame-timing.pacing-error-max-ms',
+      label: 'Pacing Error Max (ms)',
+      value: formatMillisecondsFromNanoseconds(frameRender?.pacingErrorMaxNs),
+      tabular: true,
+    },
+  ];
+};
+
+const metricTypeRenderers: Partial<Record<string, MetricDetailRenderer>> = {
+  __LATENCY__: renderLatencyMetricCards,
+  __FRAME_TIMING__: renderFrameTimingMetricCards,
 };
 
 function StatsTreeNodeRenderer({ node, style }: NodeRendererProps<StatTreeNode>) {
@@ -257,34 +415,29 @@ function App() {
     return selectedParentNode.name;
   }, [selectedNode, selectedParentNode]);
 
-  const selectedMetricHasLatency = useMemo(() => {
-    if (!selectedNode || selectedNode.kind !== 'metric') {
-      return false;
+  const selectedMetricDetailCards = useMemo<MetricDetailCard[]>(() => {
+    if (!selectedNode || selectedNode.kind !== 'metric' || !selectedNode.metric) {
+      return [];
     }
 
     const metric = selectedNode.metric;
-    return Boolean(
-      metric &&
-        (metric.type === '__LATENCY__' ||
-          metric.badLatencyCount !== undefined ||
-          metric.minNs !== undefined ||
-          metric.maxNs !== undefined ||
-          metric.avgNs !== undefined ||
-          metric.stddevNs !== undefined)
-    );
-  }, [selectedNode]);
+    const cards: MetricDetailCard[] = [];
+    const renderedTypes = new Set<string>();
 
-  const selectedMetricHasFrameRender = useMemo(() => {
-    if (!selectedNode || selectedNode.kind !== 'metric') {
-      return false;
+    if (metric.type) {
+      const renderer = metricTypeRenderers[metric.type];
+      if (renderer) {
+        cards.push(...renderer(metric));
+        renderedTypes.add(metric.type);
+      }
     }
 
-    const frameRender = selectedNode.metric?.frameRender;
-    return Boolean(
-      selectedNode.metric?.type === '__FRAME_TIMING__' &&
-        frameRender &&
-        Object.values(frameRender).some((entry) => entry !== undefined)
-    );
+    // Backward compatibility for latency metrics that carry latency fields without a type.
+    if (!renderedTypes.has('__LATENCY__') && hasLatencyMetricData(metric)) {
+      cards.push(...renderLatencyMetricCards(metric));
+    }
+
+    return cards;
   }, [selectedNode]);
 
   const breadcrumbNodes = useMemo(() => {
@@ -698,156 +851,19 @@ function App() {
                               {selectedNode.metric?.type ?? '-'}
                             </div>
                           </div>
-                          {selectedMetricHasLatency && (
-                            <>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Bad Latency Count</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatNumber(selectedNode.metric?.badLatencyCount)}
-                                </div>
+                          {selectedMetricDetailCards.map((card) => (
+                            <div
+                              key={card.key}
+                              className="rounded border border-border bg-bg p-3"
+                            >
+                              <div className="text-xs text-muted">{card.label}</div>
+                              <div
+                                className={`mt-1 text-base${card.tabular ? ' tabular-nums' : ''}`}
+                              >
+                                {card.value}
                               </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Min (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.minNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Max (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.maxNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Avg (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.avgNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Std Dev (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.stddevNs
-                                  )}
-                                </div>
-                              </div>
-                            </>
-                          )}
-                          {selectedMetricHasFrameRender && (
-                            <>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Budget Max Miss Streak</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatNumber(
-                                    selectedNode.metric?.frameRender?.budgetMaxMissStreak
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Budget Miss Ratio</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatPercentFromRatio(
-                                    selectedNode.metric?.frameRender?.budgetMissRatio
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Budget Missed Frames</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatNumber(
-                                    selectedNode.metric?.frameRender?.budgetMissedFrames
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">FPS Avg</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsAvg)}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">FPS Min</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsMin)}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">FPS Max</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsMax)}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">FPS Target</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatDecimal(selectedNode.metric?.frameRender?.fpsTarget)}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Interval Avg (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.frameRender?.intervalAvgNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Interval Min (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.frameRender?.intervalMinNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Interval Max (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.frameRender?.intervalMaxNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Interval Std Dev (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.frameRender?.intervalStddevNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Interval Variance</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatDecimal(
-                                    selectedNode.metric?.frameRender?.intervalVariance
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Pacing Error Avg (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.frameRender?.pacingErrorAvgNs
-                                  )}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border bg-bg p-3">
-                                <div className="text-xs text-muted">Pacing Error Max (ms)</div>
-                                <div className="mt-1 text-base tabular-nums">
-                                  {formatMillisecondsFromNanoseconds(
-                                    selectedNode.metric?.frameRender?.pacingErrorMaxNs
-                                  )}
-                                </div>
-                              </div>
-                            </>
-                          )}
+                            </div>
+                          ))}
                           <div className="rounded border border-border bg-bg p-3">
                             <div className="text-xs text-muted">Category</div>
                             <div className="mt-1 text-base">
@@ -958,4 +974,3 @@ function App() {
 }
 
 export default App;
-
