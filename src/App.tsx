@@ -11,7 +11,11 @@ import { Tree } from 'react-arborist';
 import type { NodeApi, NodeRendererProps, TreeApi } from 'react-arborist';
 import { DataTable } from './components/DataTable';
 import type { StatMetricValue, StatTreeNode, TelemetrySession } from './types';
-import { parseTelemetryInput, statsMarker } from './utils/parser';
+import {
+  parseTelemetryInput,
+  statsMarker,
+  type ParseResult,
+} from './utils/parser';
 import {
   formatBytes,
   formatDecimal,
@@ -463,6 +467,28 @@ function App() {
     fileInputRef.current?.click();
   }, []);
 
+  const applyParseResult = useCallback((result: ParseResult) => {
+    setErrors(result.errors);
+    setSessions(result.sessions);
+
+    if (result.sessions.length > 0) {
+      setSelectedSessionId(result.sessions[0].sessionId);
+      setSelectedNodeId('');
+      setTreeSearch('');
+      setShowRawJson(false);
+      setRawJsonCopied(false);
+      setActiveView('sessions');
+      return;
+    }
+
+    setSelectedSessionId('');
+    setSelectedNodeId('');
+    setTreeSearch('');
+    setShowRawJson(false);
+    setRawJsonCopied(false);
+    setActiveView('input');
+  }, []);
+
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -471,12 +497,11 @@ function App() {
       }
 
       const text = await file.text();
-      setInputText(text);
-      setActiveView('input');
-      setErrors([]);
+      const result = parseTelemetryInput(text);
+      applyParseResult(result);
       event.target.value = '';
     },
-    []
+    [applyParseResult]
   );
 
   const openSession = useCallback(
@@ -493,18 +518,8 @@ function App() {
 
   const handleParseSessions = useCallback(() => {
     const result = parseTelemetryInput(inputText);
-    setErrors(result.errors);
-    setSessions(result.sessions);
-
-    if (result.sessions.length > 0) {
-      setSelectedSessionId(result.sessions[0].sessionId);
-      setSelectedNodeId('');
-      setTreeSearch('');
-      setShowRawJson(false);
-      setRawJsonCopied(false);
-      setActiveView('sessions');
-    }
-  }, [inputText]);
+    applyParseResult(result);
+  }, [applyParseResult, inputText]);
 
   const handleCopyRawJson = useCallback(async () => {
     if (!selectedSession) {
@@ -798,6 +813,7 @@ function App() {
                         data={treeData}
                         width="100%"
                         height={treeHeight}
+                        openByDefault={false}
                         rowHeight={38}
                         indent={20}
                         overscanCount={8}
