@@ -592,7 +592,7 @@ function App() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-xl font-semibold tracking-wide">
-                Pits n&apos; Giggles - Stats Viewer
+                Pits n&apos; Giggles Stats Explorer
               </h1>
               <p className="text-sm text-muted">
                 Inspect telemetry statistics captured in Pits n&apos; Giggles logs

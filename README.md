@@ -1,6 +1,6 @@
-# Pits n' Giggles - Stats Viewer
+# Pits n' Giggles Stats Explorer
 
-Web-based telemetry statistics viewer for Pits n' Giggles logs.
+Web-based telemetry statistics explorer for Pits n' Giggles logs.
 
 ## Stack
 
@@ -16,11 +16,10 @@ Web-based telemetry statistics viewer for Pits n' Giggles logs.
 - Extracts and safely parses the embedded JSON stats payload.
 - Supports multiple sessions in one log input.
 - Traverses unknown-depth nested metrics recursively.
-- Flattens metrics into table rows with full canonical paths.
 - Provides:
   - Input view (upload or paste)
   - Session list
-  - Session explorer (subsystems, groups, metrics, breadcrumbs, raw JSON)
+  - Session explorer (tree navigation, node details, breadcrumbs, raw JSON)
 
 ## Development
 

@@ -1,579 +1,258 @@
-# Pits n' Giggles — Stats Viewer
+# Pits n' Giggles Stats Explorer
 
-Technical Specification
+Current technical specification for the app as implemented in this repository.
 
 ---
 
-# Overview
+## Overview
 
-Build a **web-based statistics viewer** for **Pits n' Giggles telemetry logs**.
-
-The tool parses telemetry statistics embedded inside log files and allows users to explore the metrics interactively.
-
-The viewer is primarily intended as a **debugging and diagnostic tool**, but it should still look **clean and presentable** so curious users can explore the data.
+Pits n' Giggles Stats Explorer is a client-side web app for inspecting telemetry statistics from logs or pasted JSON. It parses sessions, lists them in a table, and provides a tree-based explorer for detailed inspection.
 
 Primary goals:
-
-* inspect telemetry stats quickly
-* support multiple sessions
-* navigate nested metrics easily
-* remain compatible with a **flexible evolving schema**
-
-The application must run **entirely client-side** and be deployable as a **static site on Vercel**.
+- Parse one or many telemetry sessions from raw text.
+- Keep parsing resilient to schema changes and unknown nesting depth.
+- Let users drill from session -> tree node -> metric details quickly.
+- Provide raw JSON access for debugging and copy/paste workflows.
 
 ---
 
-# Technology Stack
+## Tech Stack
 
-Use the following stack:
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- TanStack Table
+- react-arborist (tree explorer)
 
-* Vite
-* React
-* TypeScript
-* Tailwind CSS
-* TanStack Table
-
-All parsing and data processing must happen **in the browser**.
-
-No backend services.
+All parsing and processing happen in the browser. No backend is required.
 
 ---
 
-# Application Name
+## Application Name and Copy
 
-Title:
-
-**Pits n' Giggles — Stats Viewer**
-
-Subtitle:
-
-**Inspect telemetry statistics captured in Pits n' Giggles logs**
+- Application name: `Pits n' Giggles Stats Explorer`
+- Subtitle: `Inspect telemetry statistics captured in Pits n' Giggles logs`
 
 ---
 
-# Visual Theme
+## High-Level Flow
 
-The UI must follow the **Pits n' Giggles visual identity**.
+The app has three views controlled in a single-page flow:
+- `Input`
+- `Session List`
+- `Session Explorer`
 
-Use a **dark theme** with a **black + red palette**.
-
-### Color palette
-
-Background
-`#0a0a0a`
-
-Card background
-`#141414`
-
-Borders
-`#2a2a2a`
-
-Primary accent (Pits n' Giggles red)
-`#e10600`
-
-Primary text
-`#e5e5e5`
-
-Muted text
-`#9ca3af`
-
-Row hover highlight
-`#1f1f1f`
+Typical flow:
+1. User uploads a file or pastes text.
+2. User clicks `Parse Sessions`.
+3. App detects sessions and shows `Session List`.
+4. User clicks `View` for a session.
+5. App opens `Session Explorer` with tree navigation and details.
 
 ---
 
-# Design Philosophy
+## Input and Parsing Rules
 
-The viewer should resemble **developer tooling** rather than a dashboard.
+### Accepted input
 
-Design inspirations:
+- Pasted log text
+- Pasted JSON object or JSON array
+- Uploaded `.log`, `.txt`, or `.json` file (file content is loaded into the input area)
 
-* Chrome DevTools
-* Grafana inspect panels
-* GitHub table views
+### Marker-based log parsing
 
-Principles:
+- Session marker is the exact string: `Final subsystem stats`.
+- Input is split by line.
+- Only lines containing the marker are treated as session candidates.
+- For each matching line, the parser extracts the first balanced JSON object after the marker.
+- JSON extraction is brace-balanced and string-aware (handles escaped quotes and braces inside strings).
 
-* table-first interface
-* minimal UI noise
-* progressive drill-down
-* support large metric sets
-* emphasize readability in dark theme
+### Timestamp handling
 
----
+- If a line starts with bracketed text like `[2026-03-07 15:18:07.853]`, that value is parsed as timestamp.
+- If it cannot be parsed as a valid date, the raw bracket value is preserved.
+- If no timestamp is found, current time is used.
 
-# Layout
+### Raw JSON fallback
 
-Use a centered layout.
+If no marker-based sessions are found, parser falls back to raw JSON:
+- JSON object input -> one session
+- JSON array input -> one session per object element
+- For array elements:
+  - If `stats_json` exists and is an object, it is used as session stats.
+  - Otherwise the element itself is treated as stats.
+  - Optional `timestamp` field is used when present.
 
-Structure:
+### Error behavior
 
-Header
-Main Content
-Footer
-
-Maximum content width:
-
-`max-w-6xl`
-
----
-
-# Header
-
-Header contents:
-
-**Pits n' Giggles — Stats Viewer**
-
-Subtitle:
-
-Inspect telemetry statistics captured in Pits n' Giggles logs
-
-Right side actions:
-
-Upload Log
-Paste Logs
-
-Optional GitHub link.
-
----
-
-# Core Concepts
-
-## Sessions
-
-Each telemetry session outputs a **statistics snapshot** into the system log.
-
-Example log line:
-
-```
-2026-03-07T10:14:22 STATS_JSON {"Core": {...}, "HUD": {...}}
-```
-
-Structure:
-
-timestamp
-fixed prefix
-JSON stats object
-
-A log file may contain **multiple sessions**.
-
-The viewer must extract all sessions and allow navigation between them.
-
----
-
-# Log Parsing Rules
-
-The parser must:
-
-1. read the entire log text
-2. split it into lines
-3. detect lines containing the stats prefix
-4. extract the JSON portion
-5. parse the JSON safely
-6. create session entries
-
-Lines without stats must be ignored.
-
----
-
-# Session Object
-
-Each detected session must store:
-
-```
-session_id
-timestamp
-stats_json
-subsystems
-uptime_seconds (optional)
-```
-
-Subsystems are determined from the **top-level keys of the JSON object**.
-
----
-
-# Statistics Schema
-
-The statistics schema is intentionally **simple, flexible, and extensible**.
-
-The viewer must not assume a fixed schema.
-
-The only guaranteed rule:
-
-**Top-level keys represent subsystems.**
-
-Example:
-
-```
-Core
-HUD
-Pit Wall
-Save Viewer
-```
-
----
-
-# Flexible Nested Structure
-
-Inside each subsystem the data may contain **multiple counters and arbitrary nesting**.
-
-Example structure:
-
-```
-subsystem
-  → counter group
-    → category
-      → subcategory
-        → stat_container
-```
-
-However, the number of levels is **not fixed**.
-
-The viewer must treat the data as a **generic nested tree**.
-
----
-
-# Stat Container
-
-Leaf nodes in the tree are **stat containers**.
-
-A stat container contains metric values.
-
-Example:
-
-```
-{
-  count: 10747,
-  bytes: 14529944,
-  type: "packet"
-}
-```
-
-Fields:
-
-count (optional)
-bytes (optional)
-type (optional)
-
-The presence of `count` or `bytes` indicates a **leaf metric**.
-
-The viewer must detect stat containers dynamically.
-
----
-
-# Type Field
-
-Stat containers may optionally include a `type` field.
-
-The type describes the **nature of the metric**.
-
+Errors are collected and shown in the Input view.
 Examples:
-
-```
-packet
-event
-frame
-network
-generic
-```
-
-The viewer should use this field **only for display and formatting**, not for schema logic.
+- Marker found but JSON cannot be extracted
+- JSON payload parse failure
+- Payload is not a JSON object
+- No sessions found
 
 ---
 
-# Recursive Traversal Requirement
+## Session Data Model
 
-The stats viewer must traverse statistics **recursively**.
+Each parsed session stores:
+- `sessionId` (`session-1`, `session-2`, ...)
+- `timestamp`
+- `statsJson`
+- `subsystems` (top-level keys of `statsJson`)
+- `uptimeSeconds` (optional)
+- `sourceLine` (optional, for marker-based parsing)
 
-It must treat the JSON as a **tree of unknown depth**.
-
-Traversal logic:
-
-* if an object contains `count` or `bytes`, treat it as a metric
-* otherwise treat it as a group node and continue traversal
-
-This guarantees compatibility with any future schema extension.
-
----
-
-# Metric Identity
-
-Each metric must have a canonical path constructed from its location in the tree.
-
-Example:
-
-```
-Core.frame_gate.dropped_packets.DUPLICATE_PACKET_TYPE
-```
-
-This path must be displayed in the UI and used as the metric identifier.
+`uptimeSeconds` can be read from these keys at top-level or one nested object level:
+- `uptime_seconds`
+- `uptimeSeconds`
+- `duration_seconds`
+- `durationSeconds`
 
 ---
 
-# Flattened Metric Representation
+## Session List View
 
-For rendering tables, metrics should be flattened into rows.
+Displayed after successful parsing.
 
-Each row contains:
+Table columns:
+- Session (index label like `Session 1`)
+- Timestamp
+- Subsystems (comma-separated)
+- Duration
+- View action button
 
-```
-subsystem
-group_path
-metric_name
-count
-bytes
-type
-full_path
-```
-
-Example:
-
-| Subsystem | Group                      | Metric                | Count | Bytes |
-| --------- | -------------------------- | --------------------- | ----- | ----- |
-| Core      | frame_gate.dropped_packets | DUPLICATE_PACKET_TYPE | 108   | 31745 |
+Table capabilities (TanStack Table):
+- Global filtering
+- Sorting
+- Pagination
+- Column resizing
 
 ---
 
-# Application Views
+## Session Explorer View
 
-The application consists of three main views:
+The explorer opens for one selected session and includes:
 
-1. Input Page
-2. Session List
-3. Session Explorer
+### Context and summary
 
-All navigation happens within a single-page application.
+- Breadcrumb navigation (`Sessions > Session N > ...selected path`)
+- Session summary cards:
+  - Session timestamp
+  - Subsystems count
+  - Tree nodes count
+  - Metric leaves count
+- Duration text when available
 
----
+### Tree navigation panel
 
-# Input Page
+- Tree is built from `statsJson` recursively.
+- Top-level object keys become subsystem roots.
+- Any object with numeric `count` is treated as a metric leaf.
+- Non-metric objects are treated as container nodes.
+- Search matches node name and full path (case-insensitive).
+- Controls:
+  - Expand All
+  - Collapse All
+  - Clear Search
 
-Purpose: ingest logs.
+### Node details panel
 
-Layout:
+When a metric node is selected, panel shows:
+- Count
+- Bytes (raw and human-readable)
+- Type
+- Category (derived from parent container when parent is a category-like node)
+- Node kind (`Subcategory`)
+- Full path
 
-Upload Log File
+Additional metric cards are rendered for known metric types:
+- `__LATENCY__`
+  - Bad Latency Count
+  - Min/Max/Avg/Std Dev in ms
+- `__FRAME_TIMING__`
+  - Budget miss stats
+  - FPS stats
+  - Interval stats
+  - Pacing error stats
 
-OR
+Backward compatibility:
+- Latency cards are also shown when latency fields exist even if `type` is missing.
 
-Paste Logs / JSON
+When a non-metric node is selected, panel shows:
+- Node kind (`Subsystem`, `Category`, `Container`)
+- Child count
+- Clickable child node links
+- Full path
 
-Large textarea
+### Raw JSON section
 
-Parse Sessions button
-
-The textarea must support:
-
-* entire log files
-* pasted log snippets
-* raw JSON stats
-
----
-
-# Session List
-
-After parsing, the viewer shows detected sessions.
-
-Display sessions in a table.
-
-Columns:
-
-Index
-Timestamp
-Subsystems
-Duration
-View
-
-Example:
-
-| # | Timestamp | Subsystems | Duration |      |
-| - | --------- | ---------- | -------- | ---- |
-| 1 | 10:14:22  | Core, HUD  | 15.6s    | View |
-
-Clicking **View** opens the session explorer.
-
----
-
-# Session Explorer
-
-The session explorer displays metrics for the selected session.
-
-Top section shows session metadata:
-
-Session timestamp
-Duration (if available)
-
-Below show **summary cards**:
-
-Subsystems
-Groups
-Total metrics
-Duration
+- Toggle button to show/hide formatted session JSON.
+- Copy button copies JSON to clipboard.
+- Temporary `Copied` feedback is shown after copy.
 
 ---
 
-# Subsystem Navigation
+## Tree and Metric Typing Rules
 
-Subsystems are displayed as tabs.
+Node kinds:
+- `subsystem`
+- `container`
+- `metric`
 
-Example:
+Metric detection:
+- A node is a metric when it is an object containing a numeric `count`.
 
-Core | HUD | Pit Wall | Save Viewer
-
-The selected subsystem should be highlighted using the red accent color.
-
----
-
-# Subsystem Metrics
-
-Within a subsystem the viewer should display **grouped metrics**.
-
-Groups correspond to nested nodes inside the subsystem.
-
-Example hierarchy:
-
-```
-Core
- ├ frame_gate
- │   └ dropped_packets
- │       └ DUPLICATE_PACKET_TYPE
- ├ parser
- │   └ dropped_packets
- │       └ UNINTERESTED_PACKET
-```
-
-Each group becomes a **section in the UI**.
+Recognized metric fields (when present):
+- `count`
+- `bytes`
+- `type`
+- `bad_latency_count` / `badLatencyCount`
+- `min_ns` / `minNs` / `min`
+- `max_ns` / `maxNs` / `max`
+- `avg_ns` / `avgNs` / `avg`
+- `stddev_ns` / `stddevNs` / `stddev`
+- `budget`, `fps`, `interval_ns` / `intervalNs`, `pacing_error_ns` / `pacingErrorNs` (for frame-timing metrics)
 
 ---
 
-# Metric Tables
+## Formatting Rules
 
-Each group should display metrics using a table.
-
-Columns:
-
-Metric
-Count
-Bytes
-Avg Bytes
-Type
-Full Path
-
-Example:
-
-| Metric                | Count | Bytes | Avg Bytes | Type   |
-| --------------------- | ----- | ----- | --------- | ------ |
-| DUPLICATE_PACKET_TYPE | 108   | 31745 | 293       | packet |
-
-Numeric columns must be right-aligned.
+- Large numbers are locale-formatted.
+- Bytes are shown with binary units (`B`, `KB`, `MB`, `GB`, `TB`).
+- Seconds are shown with one decimal place and `s` suffix.
+- Nanoseconds are shown as milliseconds with up to 3 decimals.
+- Ratio values can be rendered as percentages.
+- Timestamps are rendered with `toLocaleString()` when parseable.
 
 ---
 
-# Aggregation
+## UI and Theme
 
-Group nodes should display aggregated totals.
-
-Example:
-
-```
-frame_gate
-```
-
-Totals are calculated by summing child metrics.
-
-```
-total_count = sum(children.count)
-total_bytes = sum(children.bytes)
-```
+- Dark, developer-tool style presentation.
+- Header action set:
+  - Upload Log
+  - Paste Logs
+  - GitHub link
+- Footer text:
+  - `Pits n' Giggles`
+  - `Telemetry debugging tools`
 
 ---
 
-# Breadcrumb Navigation
+## Build and Run
 
-Display navigation context.
-
-Example:
-
-Sessions > Session 3 > Core > frame_gate > dropped_packets
-
-Breadcrumbs must be clickable.
-
----
-
-# Raw JSON Viewer
-
-Each session page should include a raw JSON viewer.
-
-Button:
-
-Show Raw JSON
-
-The JSON should be formatted and displayed in a collapsible viewer.
-
----
-
-# Tables
-
-All tables must support:
-
-sorting
-pagination
-filtering
-column resizing
-
-TanStack Table should be used.
-
-Tables must use dark theme styling.
-
----
-
-# Performance Requirements
-
-The viewer must handle:
-
-100+ sessions
-10k+ metrics
-large log files
-
-Avoid expensive rerenders.
-
----
-
-# Footer
-
-Footer content:
-
-Pits n' Giggles
-Telemetry debugging tools
-
----
-
-# Build and Deployment
-
-The project must run using:
-
+Development:
+```bash
 npm install
 npm run dev
+```
 
 Production build:
-
+```bash
 npm run build
+```
 
-The output must be deployable as a **static site on Vercel**.
-
----
-
-# Deliverables
-
-The generated project must include:
-
-Vite configuration
-React components
-TypeScript types
-Tailwind setup
-TanStack Table integration
-log parsing utilities
-stats traversal utilities
-
-The result should be a **fully functional Pits n' Giggles Stats Viewer**.
-
+The app is static-site deployable.
