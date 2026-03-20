@@ -7,6 +7,8 @@ export interface TelemetrySession {
   subsystems: string[];
   uptimeSeconds?: number;
   sourceLine?: number;
+  version?: string;
+  forcedShutdown?: boolean;
 }
 
 export type StatNodeKind = 'subsystem' | 'container' | 'metric';

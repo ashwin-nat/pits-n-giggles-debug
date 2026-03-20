@@ -169,6 +169,7 @@ export interface IndexedTree {
   byPath: Map<string, StatTreeNode>;
   totalNodes: number;
   metricNodes: number;
+  metricTypes: string[];
 }
 
 export const indexStatsTree = (roots: StatTreeNode[]): IndexedTree => {
@@ -177,6 +178,7 @@ export const indexStatsTree = (roots: StatTreeNode[]): IndexedTree => {
 
   let totalNodes = 0;
   let metricNodes = 0;
+  const metricTypeSet = new Set<string>();
 
   const stack = [...roots];
   while (stack.length > 0) {
@@ -190,6 +192,9 @@ export const indexStatsTree = (roots: StatTreeNode[]): IndexedTree => {
     totalNodes += 1;
     if (node.kind === 'metric') {
       metricNodes += 1;
+      if (node.metric?.type) {
+        metricTypeSet.add(node.metric.type);
+      }
     }
 
     if (node.children && node.children.length > 0) {
@@ -204,5 +209,6 @@ export const indexStatsTree = (roots: StatTreeNode[]): IndexedTree => {
     byPath,
     totalNodes,
     metricNodes,
+    metricTypes: [...metricTypeSet].sort(),
   };
 };

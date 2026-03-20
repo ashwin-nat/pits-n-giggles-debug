@@ -18,6 +18,17 @@ const toNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const parseVersionFromLine = (line: string): string | undefined => {
+  const match = line.match(/Pits n' Giggles\s+(\S+)\s+shutdown complete/);
+  return match ? match[1] : undefined;
+};
+
+const parseForcedShutdownFromLine = (line: string): boolean | undefined => {
+  const match = line.match(/\bforced=(True|False)\b/i);
+  if (!match) return undefined;
+  return match[1].toLowerCase() === 'true';
+};
+
 const parseTimestampFromLine = (line: string): string => {
   const match = line.match(/^\[([^\]]+)\]/);
   if (!match) {
@@ -108,7 +119,9 @@ const buildSession = (
   statsJson: StatsJson,
   sessionNumber: number,
   timestamp: string,
-  sourceLine?: number
+  sourceLine?: number,
+  version?: string,
+  forcedShutdown?: boolean
 ): TelemetrySession => {
   const subsystems = Object.keys(statsJson);
   const normalizedTimestamp =
@@ -121,6 +134,8 @@ const buildSession = (
     subsystems,
     uptimeSeconds: readUptimeSeconds(statsJson),
     sourceLine,
+    version,
+    forcedShutdown,
   };
 };
 
@@ -200,8 +215,10 @@ export const parseTelemetryInput = (input: string): ParseResult => {
       }
 
       const timestamp = parseTimestampFromLine(line);
+      const version = parseVersionFromLine(line);
+      const forcedShutdown = parseForcedShutdownFromLine(line);
       sessions.push(
-        buildSession(parsed as StatsJson, sessionNumber, timestamp, lineIndex + 1)
+        buildSession(parsed as StatsJson, sessionNumber, timestamp, lineIndex + 1, version, forcedShutdown)
       );
       sessionNumber += 1;
     } catch {

@@ -742,16 +742,10 @@ function App() {
                   ))}
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="rounded border border-border bg-bg p-3">
                     <div className="text-xs text-muted">Session timestamp</div>
                     <div className="mt-1 text-sm">{formatTimestamp(selectedSession.timestamp)}</div>
-                  </div>
-                  <div className="rounded border border-border bg-bg p-3">
-                    <div className="text-xs text-muted">Subsystems</div>
-                    <div className="mt-1 text-sm tabular-nums">
-                      {formatNumber(selectedSession.subsystems.length)}
-                    </div>
                   </div>
                   <div className="rounded border border-border bg-bg p-3">
                     <div className="text-xs text-muted">Tree nodes</div>
@@ -763,6 +757,26 @@ function App() {
                     <div className="text-xs text-muted">Metric leaves</div>
                     <div className="mt-1 text-sm tabular-nums">
                       {formatNumber(treeIndex.metricNodes)}
+                    </div>
+                  </div>
+                  <div className="rounded border border-border bg-bg p-3">
+                    <div className="text-xs text-muted">Metric types</div>
+                    <div className="mt-1 text-sm">
+                      {treeIndex.metricTypes.length > 0 ? treeIndex.metricTypes.join(', ') : '—'}
+                    </div>
+                  </div>
+                  <div className="rounded border border-border bg-bg p-3">
+                    <div className="text-xs text-muted">Version</div>
+                    <div className="mt-1 text-sm">{selectedSession.version ?? '—'}</div>
+                  </div>
+                  <div className="rounded border border-border bg-bg p-3">
+                    <div className="text-xs text-muted">Forced shutdown</div>
+                    <div className="mt-1 text-sm">
+                      {selectedSession.forcedShutdown === undefined
+                        ? '—'
+                        : selectedSession.forcedShutdown
+                          ? 'Yes'
+                          : 'No'}
                     </div>
                   </div>
                 </div>
