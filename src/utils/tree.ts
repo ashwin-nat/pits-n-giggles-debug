@@ -116,12 +116,14 @@ const buildNode = (
         minNs: readNumberField(value, 'min_ns', 'minNs', 'min'),
         maxNs: readNumberField(value, 'max_ns', 'maxNs', 'max'),
         avgNs: readNumberField(value, 'avg_ns', 'avgNs', 'avg'),
-        stddevNs: readNumberField(
-          value,
-          'stddev_ns',
-          'stddevNs',
-          'stddev'
-        ),
+        stddevNs: readNumberField(value, 'stddev_ns', 'stddevNs', 'stddev'),
+        p50Ns: readNumberField(value, 'p50_ns', 'p50Ns'),
+        p95Ns: readNumberField(value, 'p95_ns', 'p95Ns'),
+        p99Ns: readNumberField(value, 'p99_ns', 'p99Ns'),
+        jitterAvgNs: readNumberField(value, 'jitter_avg_ns', 'jitterAvgNs'),
+        jitterMaxNs: readNumberField(value, 'jitter_max_ns', 'jitterMaxNs'),
+        ewmaNs: readNumberField(value, 'ewma_ns', 'ewmaNs'),
+        tailRatio: readNumberField(value, 'tail_ratio', 'tailRatio'),
         frameRender: readFrameRenderMetric(value),
       },
     };

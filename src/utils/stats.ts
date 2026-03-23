@@ -113,12 +113,14 @@ export const flattenSubsystemMetrics = (
         minNs: readNumberField(node, 'min_ns', 'minNs', 'min'),
         maxNs: readNumberField(node, 'max_ns', 'maxNs', 'max'),
         avgNs: readNumberField(node, 'avg_ns', 'avgNs', 'avg'),
-        stddevNs: readNumberField(
-          node,
-          'stddev_ns',
-          'stddevNs',
-          'stddev'
-        ),
+        stddevNs: readNumberField(node, 'stddev_ns', 'stddevNs', 'stddev'),
+        p50Ns: readNumberField(node, 'p50_ns', 'p50Ns'),
+        p95Ns: readNumberField(node, 'p95_ns', 'p95Ns'),
+        p99Ns: readNumberField(node, 'p99_ns', 'p99Ns'),
+        jitterAvgNs: readNumberField(node, 'jitter_avg_ns', 'jitterAvgNs'),
+        jitterMaxNs: readNumberField(node, 'jitter_max_ns', 'jitterMaxNs'),
+        ewmaNs: readNumberField(node, 'ewma_ns', 'ewmaNs'),
+        tailRatio: readNumberField(node, 'tail_ratio', 'tailRatio'),
         frameRender: readFrameRenderMetric(node),
         fullPath: [subsystem, ...path].join('.'),
       });

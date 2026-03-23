@@ -39,6 +39,13 @@ export interface StatMetricValue {
   maxNs?: number;
   avgNs?: number;
   stddevNs?: number;
+  p50Ns?: number;
+  p95Ns?: number;
+  p99Ns?: number;
+  jitterAvgNs?: number;
+  jitterMaxNs?: number;
+  ewmaNs?: number;
+  tailRatio?: number;
   frameRender?: FrameRenderMetricValue;
 }
 
@@ -65,6 +72,13 @@ export interface MetricRow {
   maxNs?: number;
   avgNs?: number;
   stddevNs?: number;
+  p50Ns?: number;
+  p95Ns?: number;
+  p99Ns?: number;
+  jitterAvgNs?: number;
+  jitterMaxNs?: number;
+  ewmaNs?: number;
+  tailRatio?: number;
   frameRender?: FrameRenderMetricValue;
   fullPath: string;
 }

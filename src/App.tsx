@@ -106,6 +106,7 @@ interface MetricDetailCard {
   label: string;
   value: string;
   tabular?: boolean;
+  highlight?: 'warning' | 'critical';
 }
 
 type MetricDetailRenderer = (metric: StatMetricValue) => MetricDetailCard[];
@@ -126,38 +127,104 @@ const hasFrameTimingMetricData = (metric: StatMetricValue | undefined): boolean 
   return Boolean(frameRender && Object.values(frameRender).some((entry) => entry !== undefined));
 };
 
-const renderLatencyMetricCards: MetricDetailRenderer = (metric) => [
-  {
-    key: 'latency.bad-latency-count',
-    label: 'Bad Latency Count',
-    value: formatNumber(metric.badLatencyCount),
-    tabular: true,
-  },
-  {
-    key: 'latency.min-ms',
-    label: 'Min (ms)',
-    value: formatMillisecondsFromNanoseconds(metric.minNs),
-    tabular: true,
-  },
-  {
-    key: 'latency.max-ms',
-    label: 'Max (ms)',
-    value: formatMillisecondsFromNanoseconds(metric.maxNs),
-    tabular: true,
-  },
-  {
-    key: 'latency.avg-ms',
-    label: 'Avg (ms)',
-    value: formatMillisecondsFromNanoseconds(metric.avgNs),
-    tabular: true,
-  },
-  {
-    key: 'latency.std-dev-ms',
-    label: 'Std Dev (ms)',
-    value: formatMillisecondsFromNanoseconds(metric.stddevNs),
-    tabular: true,
-  },
-];
+const nsToMs2dp = (ns: number): string => `${(ns / 1_000_000).toFixed(2)} ms`;
+
+const renderLatencyMetricCards: MetricDetailRenderer = (metric) => {
+  const cards: MetricDetailCard[] = [
+    {
+      key: 'latency.bad-latency-count',
+      label: 'Bad Latency Count',
+      value: formatNumber(metric.badLatencyCount),
+      tabular: true,
+    },
+    {
+      key: 'latency.min-ms',
+      label: 'Min (ms)',
+      value: formatMillisecondsFromNanoseconds(metric.minNs),
+      tabular: true,
+    },
+    {
+      key: 'latency.max-ms',
+      label: 'Max (ms)',
+      value: formatMillisecondsFromNanoseconds(metric.maxNs),
+      tabular: true,
+    },
+    {
+      key: 'latency.avg-ms',
+      label: 'Avg (ms)',
+      value: formatMillisecondsFromNanoseconds(metric.avgNs),
+      tabular: true,
+    },
+    {
+      key: 'latency.std-dev-ms',
+      label: 'Std Dev (ms)',
+      value: formatMillisecondsFromNanoseconds(metric.stddevNs),
+      tabular: true,
+    },
+  ];
+
+  // Percentiles
+  const percentileParts: string[] = [];
+  if (metric.p50Ns !== undefined) percentileParts.push(`p50: ${nsToMs2dp(metric.p50Ns)}`);
+  if (metric.p95Ns !== undefined) percentileParts.push(`p95: ${nsToMs2dp(metric.p95Ns)}`);
+  if (metric.p99Ns !== undefined) percentileParts.push(`p99: ${nsToMs2dp(metric.p99Ns)}`);
+  if (percentileParts.length > 0) {
+    const p99Critical =
+      metric.p99Ns !== undefined &&
+      metric.avgNs !== undefined &&
+      metric.p99Ns > 3 * metric.avgNs;
+    cards.push({
+      key: 'latency.percentiles',
+      label: 'Percentiles',
+      value: percentileParts.join(' | '),
+      tabular: true,
+      highlight: p99Critical ? 'critical' : undefined,
+    });
+  }
+
+  // Jitter
+  const hasJitterAvg = metric.jitterAvgNs !== undefined;
+  const hasJitterMax = metric.jitterMaxNs !== undefined;
+  if (hasJitterAvg || hasJitterMax) {
+    const jitterParts: string[] = [];
+    if (hasJitterAvg) jitterParts.push(`avg ${nsToMs2dp(metric.jitterAvgNs!)}`);
+    if (hasJitterMax) jitterParts.push(`max ${nsToMs2dp(metric.jitterMaxNs!)}`);
+    const jitterSpiky =
+      hasJitterAvg && hasJitterMax && metric.jitterMaxNs! > 5 * metric.jitterAvgNs!;
+    cards.push({
+      key: 'latency.jitter',
+      label: 'Jitter',
+      value: `jitter: ${jitterParts.join(' / ')}`,
+      tabular: true,
+      highlight: jitterSpiky ? 'warning' : undefined,
+    });
+  }
+
+  // EWMA
+  if (metric.ewmaNs !== undefined) {
+    cards.push({
+      key: 'latency.ewma',
+      label: 'EWMA',
+      value: `ewma: ${nsToMs2dp(metric.ewmaNs)}`,
+      tabular: true,
+    });
+  }
+
+  // Tail ratio
+  if (metric.tailRatio !== undefined) {
+    const tailHighlight =
+      metric.tailRatio > 5 ? 'critical' : metric.tailRatio > 2 ? 'warning' : undefined;
+    cards.push({
+      key: 'latency.tail-ratio',
+      label: 'Tail Ratio',
+      value: `x${metric.tailRatio.toFixed(2)}`,
+      tabular: true,
+      highlight: tailHighlight,
+    });
+  }
+
+  return cards;
+};
 
 const renderFrameTimingMetricCards: MetricDetailRenderer = (metric) => {
   if (!hasFrameTimingMetricData(metric)) {
