@@ -377,6 +377,8 @@ function App() {
   const [treeSearch, setTreeSearch] = useState('');
   const [showRawJson, setShowRawJson] = useState(false);
   const [rawJsonCopied, setRawJsonCopied] = useState(false);
+  const [showNodeRawJson, setShowNodeRawJson] = useState(false);
+  const [nodeRawJsonCopied, setNodeRawJsonCopied] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(() =>
     typeof window === 'undefined' ? 900 : window.innerHeight
   );
@@ -384,6 +386,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const treeRef = useRef<TreeApi<StatTreeNode> | null>(null);
   const rawJsonCopyResetRef = useRef<number | null>(null);
+  const nodeRawJsonCopyResetRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -400,6 +403,9 @@ function App() {
     return () => {
       if (rawJsonCopyResetRef.current !== null) {
         window.clearTimeout(rawJsonCopyResetRef.current);
+      }
+      if (nodeRawJsonCopyResetRef.current !== null) {
+        window.clearTimeout(nodeRawJsonCopyResetRef.current);
       }
     };
   }, []);
@@ -606,6 +612,25 @@ function App() {
       rawJsonCopyResetRef.current = null;
     }, 1600);
   }, [selectedSession]);
+
+  const handleCopyNodeRawJson = useCallback(async () => {
+    if (!selectedNode?.metric) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(
+      JSON.stringify(selectedNode.metric, null, 2)
+    );
+    setNodeRawJsonCopied(true);
+
+    if (nodeRawJsonCopyResetRef.current !== null) {
+      window.clearTimeout(nodeRawJsonCopyResetRef.current);
+    }
+    nodeRawJsonCopyResetRef.current = window.setTimeout(() => {
+      setNodeRawJsonCopied(false);
+      nodeRawJsonCopyResetRef.current = null;
+    }, 1600);
+  }, [selectedNode]);
 
   const handleTreeSelect = useCallback((nodes: NodeApi<StatTreeNode>[]) => {
     setSelectedNodeId(nodes[0]?.id ?? '');
@@ -1012,6 +1037,47 @@ function App() {
                         <div className="text-xs text-muted">Full Path</div>
                         <div className="mt-1 break-all text-sm">{selectedNode.path}</div>
                       </div>
+
+                      {selectedNode.kind === 'metric' && (
+                        <div className="rounded border border-border bg-bg p-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = !showNodeRawJson;
+                                setShowNodeRawJson(next);
+                                if (!next) {
+                                  setNodeRawJsonCopied(false);
+                                }
+                              }}
+                              className="rounded border border-border px-2 py-1 text-xs hover:border-accent hover:text-accent"
+                            >
+                              {showNodeRawJson ? 'Hide' : 'Show'} Raw JSON
+                            </button>
+                            {showNodeRawJson && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleCopyNodeRawJson();
+                                }}
+                                className="inline-flex h-[28px] w-[28px] items-center justify-center rounded border border-border text-sm text-muted hover:border-accent hover:text-accent"
+                                title="Copy Raw JSON"
+                                aria-label="Copy Raw JSON"
+                              >
+                                <CopyIcon />
+                              </button>
+                            )}
+                            {showNodeRawJson && nodeRawJsonCopied && (
+                              <span className="text-xs text-muted">Copied</span>
+                            )}
+                          </div>
+                          {showNodeRawJson && (
+                            <pre className="mt-2 max-h-[300px] overflow-auto rounded border border-border bg-bg p-2 text-xs text-muted">
+                              {JSON.stringify(selectedNode.metric, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-sm text-muted">Select a node to inspect its details.</div>
