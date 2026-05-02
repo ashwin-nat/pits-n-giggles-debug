@@ -89,26 +89,19 @@ const extractJsonObject = (text: string, marker: string): string | null => {
 };
 
 const readUptimeSeconds = (statsJson: StatsJson): number | undefined => {
-  const direct =
-    toNumber(statsJson.uptime_seconds) ??
-    toNumber(statsJson.uptimeSeconds) ??
-    toNumber(statsJson.duration_seconds) ??
-    toNumber(statsJson.durationSeconds);
-
-  if (direct !== undefined) {
-    return direct;
+  const topLevel = toNumber(statsJson.uptime_seconds);
+  if (topLevel !== undefined) {
+    return topLevel;
   }
 
   for (const value of Object.values(statsJson)) {
-    if (isRecord(value)) {
-      const nested =
-        toNumber(value.uptime_seconds) ??
-        toNumber(value.uptimeSeconds) ??
-        toNumber(value.duration_seconds) ??
-        toNumber(value.durationSeconds);
-      if (nested !== undefined) {
-        return nested;
-      }
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    const nested = toNumber(value.uptime_seconds);
+    if (nested !== undefined) {
+      return nested;
     }
   }
 
