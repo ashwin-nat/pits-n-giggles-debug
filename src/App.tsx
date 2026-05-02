@@ -12,6 +12,7 @@ import type { NodeApi, NodeRendererProps, TreeApi } from 'react-arborist';
 import { DataTable } from './components/DataTable';
 import type { StatMetricValue, StatTreeNode, TelemetrySession } from './types';
 import {
+  parseTelemetryFile,
   parseTelemetryInput,
   statsMarker,
   type ParseResult,
@@ -569,8 +570,7 @@ function App() {
         return;
       }
 
-      const text = await file.text();
-      const result = parseTelemetryInput(text);
+      const result = await parseTelemetryFile(file);
       applyParseResult(result);
       event.target.value = '';
     },
@@ -702,7 +702,7 @@ function App() {
                 Pits n&apos; Giggles Stats Explorer
               </h1>
               <p className="text-sm text-muted">
-                Inspect telemetry statistics captured in Pits n&apos; Giggles logs
+                Inspect telemetry statistics from Pits n&apos; Giggles logs or session databases
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -711,14 +711,14 @@ function App() {
                 onClick={handleUploadClick}
                 className="rounded border border-border bg-bg px-3 py-2 text-sm hover:border-accent hover:text-accent"
               >
-                Upload Log
+                Upload File
               </button>
               <button
                 type="button"
                 onClick={() => setActiveView('input')}
                 className="rounded border border-border bg-bg px-3 py-2 text-sm hover:border-accent hover:text-accent"
               >
-                Paste Logs
+                Paste Text
               </button>
               <a
                 href="https://github.com"
@@ -733,7 +733,7 @@ function App() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".log,.txt,.json"
+            accept=".log,.txt,.json,.db,.sqlite,.sqlite3"
             onChange={handleFileChange}
             className="hidden"
           />
@@ -746,7 +746,7 @@ function App() {
                 <div>
                   <h2 className="text-lg font-semibold">Input</h2>
                   <p className="text-xs text-muted">
-                    Paste logs containing "{statsMarker}" or raw JSON stats.
+                    Upload log/JSON/SQLite files, or paste logs containing "{statsMarker}".
                   </p>
                 </div>
                 <button

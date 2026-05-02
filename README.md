@@ -1,6 +1,6 @@
 # Pits n' Giggles Stats Explorer
 
-Web-based telemetry statistics explorer for Pits n' Giggles logs.
+Web-based telemetry statistics explorer for Pits n' Giggles logs and session databases.
 
 ## Stack
 
@@ -12,7 +12,8 @@ Web-based telemetry statistics explorer for Pits n' Giggles logs.
 
 ## What It Does
 
-- Parses log lines that contain `Final subsystem stats`.
+- Parses legacy log lines that contain `Final subsystem stats`.
+- Parses modern SQLite session dumps (`perf_sessions` table with JSON `stats` payloads).
 - Extracts and safely parses the embedded JSON stats payload.
 - Supports multiple sessions in one log input.
 - Traverses unknown-depth nested metrics recursively.
