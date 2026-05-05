@@ -61,13 +61,17 @@ const parseForcedShutdownFromLine = (line: string): boolean | undefined => {
   return match[1].toLowerCase() === 'true';
 };
 
-const normalizeTimestamp = (rawTimestamp: string): string => {
+const normalizeTimestamp = (rawTimestamp: string, treatAsUtc = false): string => {
   const raw = rawTimestamp.trim();
   if (!raw) {
     return '';
   }
 
-  const maybeIso = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  let maybeIso = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  // If the caller knows the source is UTC and the string has no timezone designator, append Z
+  if (treatAsUtc && !maybeIso.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(maybeIso)) {
+    maybeIso += 'Z';
+  }
   const date = new Date(maybeIso);
   return Number.isNaN(date.valueOf()) ? raw : date.toISOString();
 };
@@ -336,7 +340,7 @@ const parseSessionsFromSqliteBuffer = async (
       }
 
       const timestamp = row.timestamp
-        ? normalizeTimestamp(row.timestamp)
+        ? normalizeTimestamp(row.timestamp, true)
         : new Date().toISOString();
 
       sessions.push(buildSession(parsed as StatsJson, rowIndex + 1, timestamp));
